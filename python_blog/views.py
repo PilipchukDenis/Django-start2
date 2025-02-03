@@ -5,7 +5,7 @@ from .models import Post, Category, Tag
 from django.db.models import Count, Q, F
 from django.contrib.messages import constants as messages
 from django.contrib import messages
-from .forms import TagForm
+from .forms import TagForm, PostForm
 
 CATEGORIES = [
     {"slug": "python", "name": "Python"},
@@ -46,8 +46,15 @@ def about(request):
 
 def catalog_posts(request):
     # Базовый QuerySet с оптимизацией запросов
+    # Фильтрация по status=published
+    # posts = (
+    #     Post.objects.select_related("category", "author").prefetch_related("tags").all()
+    # )
+
     posts = (
-        Post.objects.select_related("category", "author").prefetch_related("tags").all()
+        Post.objects.select_related("category", "author")
+        .prefetch_related("tags")
+        .filter(status="published")
     )
 
     # Получаем строку поиска
@@ -135,6 +142,47 @@ def post_detail(request, post_slug):
 
     context = {"title": post.title, "post": post}
     return render(request, "post_detail.html", context)
+
+def post_create(request):
+    if request.method == 'POST':
+        form = PostForm(request.POST)
+        if form.is_valid():
+            post = form.save(commit=True)
+            messages.success(
+                request, 
+                'Ваш пост успешно создан и отправлен на модерацию. После проверки он появится на сайте.'
+            )
+            return redirect('blog:posts')
+    else:
+        form = PostForm()
+    
+    context = {
+        'title': 'Создание поста',
+        'button_text': 'Создать пост',
+        'action_url': reverse('blog:post_create'),
+        'form': form
+    }
+    return render(request, 'tag_form.html', context)
+
+def post_update(request, post_slug):
+    post = Post.objects.get(slug=post_slug)
+    if request.method == 'POST':
+        form = PostForm(request.POST, instance=post)
+        if form.is_valid():
+            post = form.save()
+            messages.success(request, 'Пост успешно обновлен и отправлен на модерацию')
+            return redirect('blog:post_detail', post_slug=post.slug)
+    else:
+        form = PostForm(instance=post)
+    
+    context = {
+        'title': 'Редактирование поста',
+        'button_text': 'Обновить пост',
+        'action_url': reverse('blog:post_update', kwargs={'post_slug': post_slug}),
+        'form': form
+    }
+    return render(request, 'post_form.html', context)
+
 
 
 def catalog_categories(request):
@@ -237,8 +285,7 @@ def tag_create(request):
     if request.method == 'POST':
         form = TagForm(request.POST)
         if form.is_valid():
-            name = form.cleaned_data['name']
-            tag = Tag.objects.create(name=name)
+            tag = form.save()  # Сохраняем тег через форму
             messages.success(request, f'Тег "{tag.name}" успешно создан!')
             return redirect('blog:tags')
     else:
